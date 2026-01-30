@@ -12,6 +12,7 @@ import org.locationtech.jts.geom.Coordinate;
 import org.mapfish.print.attribute.map.MapBounds;
 import org.mapfish.print.http.MfClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequest;
+import org.gvsig.mvtrenderer.lib.impl.MVTStyles;
 
 /**
  * Encapsulates the information needed to create tile requests for a particular map bounds and
@@ -160,6 +161,14 @@ public abstract class TileInformation<T extends AbstractTiledLayerParams> {
 
   protected final T getParams() {
     return params;
+  }
+
+  public MVTStyles getVectorStyles() {
+    return params.getVectorStyles();
+  }
+
+  public Integer getVectorTileSize() {
+    return params.vectorTileSize;
   }
 
   /**

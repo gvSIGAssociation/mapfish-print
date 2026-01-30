@@ -9,11 +9,13 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.RecursiveTask;
 import javax.annotation.Nonnull;
 import javax.imageio.ImageIO;
 import org.apache.commons.io.IOUtils;
+import org.apache.http.impl.io.EmptyInputStream;
 import org.geotools.coverage.CoverageFactoryFinder;
 import org.geotools.coverage.grid.GridCoverage2D;
 import org.geotools.coverage.grid.GridCoverageFactory;
@@ -28,8 +30,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequest;
 import org.springframework.http.client.ClientHttpResponse;
+import org.gvsig.mvtrenderer.lib.impl.MVTTile;
+import org.gvsig.mvtrenderer.lib.impl.MVTStyles;
 
 /** The CoverageTask class. */
 public final class CoverageTask implements Callable<GridCoverage2D> {
@@ -147,7 +152,9 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
               tileInfo.getTileIndexY(),
               this.failOnError,
               this.registry,
-              this.context);
+              this.context,
+              this.tiledLayer
+          );
     } else {
       task =
           new PlaceHolderImageTask(
@@ -196,6 +203,37 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     private final MetricRegistry registry;
     private final Processor.ExecutionContext context;
     private final BufferedImage errorImage;
+    private final TileInformation tiledLayer;
+    
+
+    /**
+     * Constructor.
+     *
+     * @param tileRequest tile request
+     * @param errorImage error image
+     * @param tileIndexX tile index x
+     * @param tileIndexY tile index y
+     * @param failOnError fail on error
+     * @param registry registry
+     * @param context the job ID
+     */
+    public SingleTileLoaderTask(
+        final ClientHttpRequest tileRequest,
+        final BufferedImage errorImage,
+        final int tileIndexX,
+        final int tileIndexY,
+        final boolean failOnError,
+        final MetricRegistry registry,
+        final Processor.ExecutionContext context,
+        final TileInformation tiledLayer) {
+      super(tileIndexX, tileIndexY);
+      this.tileRequest = tileRequest;
+      this.errorImage = errorImage;
+      this.failOnError = failOnError;
+      this.registry = registry;
+      this.context = context;
+      this.tiledLayer = tiledLayer;
+    }
 
     /**
      * Constructor.
@@ -216,12 +254,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
         final boolean failOnError,
         final MetricRegistry registry,
         final Processor.ExecutionContext context) {
-      super(tileIndexX, tileIndexY);
-      this.tileRequest = tileRequest;
-      this.errorImage = errorImage;
-      this.failOnError = failOnError;
-      this.registry = registry;
-      this.context = context;
+      this(tileRequest, errorImage, tileIndexX, tileIndexY, failOnError, registry, context, null);
     }
 
     @Override
@@ -272,7 +305,8 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
 
     private BufferedImage getImageFromResponse(
         final ClientHttpResponse response, final String baseMetricName) throws IOException {
-      BufferedImage image = ImageIO.read(response.getBody());
+      LOGGER.info("Entro en getImageFromResponse");
+      BufferedImage image = isVectorTile(response) ? renderVectorTile(response) : ImageIO.read(response.getBody());
       if (image == null) {
         if (this.failOnError) {
           this.registry.counter(baseMetricName + ".failOn.error").inc();
@@ -290,6 +324,54 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
         this.registry.counter(baseMetricName + ".error").inc();
       }
       return image;
+    }
+    
+    private BufferedImage renderVectorTile(final ClientHttpResponse response) throws IOException {
+      if(response.getBody() == null || response.getBody() instanceof EmptyInputStream) {
+        LOGGER.info("response.body is empty");
+        return this.tiledLayer.getMissingTileImage();
+      }
+      if(response.getBody().available() < 1) {
+        LOGGER.info("response.body is empty. available = "+response.getBody().available());
+        return this.tiledLayer.getMissingTileImage();
+      }
+      MVTTile tile = new MVTTile();
+      tile.setForcedExtent(this.tiledLayer.getVectorTileSize());
+      LOGGER.info("loading mvtTile");
+      tile.download(response.getBody());
+      LOGGER.info("loaded mvtTile");
+      Dimension tileSize = this.tiledLayer.getTileSize();
+      MVTStyles styles = this.tiledLayer.getVectorStyles();
+      if(styles == null) {
+        LOGGER.info("vectorStyles is NULL");
+        return this.tiledLayer.getMissingTileImage();
+      }
+      LOGGER.info("vectorStyles w = "+tileSize.width+" h = "+tileSize.height);
+      BufferedImage image = tile.render(styles, tileSize.width, tileSize.height);
+      LOGGER.info("Image created");
+      return image;
+    }
+    
+    private boolean isVectorTile(final ClientHttpResponse response) {
+      if(this.tiledLayer == null) {
+        LOGGER.info("tiledLayer is NULL");
+        return false;
+      }
+      try {
+        MediaType ct = response.getHeaders().getContentType();
+        LOGGER.info("contentType "+Objects.toString(ct));
+        boolean r = ct != null && ct.toString().equalsIgnoreCase("application/x-protobuf");
+        if(!r) {
+          String s = this.tileRequest.getURI().toString().toLowerCase();
+          r = s.endsWith(".pbf");
+        }
+        LOGGER.info("return "+r);
+        return r;
+      } catch (Exception e) {
+        LOGGER.info("error ", e);
+        return false;
+      }
+
     }
 
     private Tile handleNonOkStatus(final ClientHttpResponse response, final String baseMetricName)

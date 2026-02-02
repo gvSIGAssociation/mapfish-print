@@ -22,11 +22,11 @@ public abstract class AbstractTiledLayerParams extends AbstractLayerParams {
    */
   @HasDefaultValue public String rasterStyle = "raster";
   /**
-   * FIXME: Agregar javadoc de vectorStyles
+   * FIXME: Agregar javadoc de vectorStyles.
    */
   @HasDefaultValue public String vectorStyles = null;
   /**
-   * FIXME: Agregar javadoc de vectorTileSize
+   * FIXME: Agregar javadoc de vectorTileSize.
    */
   @HasDefaultValue public Integer vectorTileSize = null;
   
@@ -82,7 +82,8 @@ public abstract class AbstractTiledLayerParams extends AbstractLayerParams {
       MVTStyles theStyles = new MVTStyles();
       theStyles.download(url);
       LOGGER.info("Fonts used by '"+url.toString()+"':"+StringUtils.join(theStyles.getUsedFontNames(),","));
-      return this.styles= theStyles;
+      this.styles = theStyles;
+      return this.styles;
     } catch (Exception e) {
       return null;
     }

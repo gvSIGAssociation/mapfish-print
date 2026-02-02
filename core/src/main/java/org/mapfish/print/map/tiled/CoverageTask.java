@@ -152,9 +152,9 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
               tileInfo.getTileIndexY(),
               this.failOnError,
               this.registry,
-              this.context,
-              this.tiledLayer
+              this.context
           );
+      ((SingleTileLoaderTask)task).setTiledLayer(tiledLayer);
     } else {
       task =
           new PlaceHolderImageTask(
@@ -203,7 +203,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     private final MetricRegistry registry;
     private final Processor.ExecutionContext context;
     private final BufferedImage errorImage;
-    private final TileInformation tiledLayer;
+    private TileInformation tiledLayer;
     
 
     /**
@@ -224,39 +224,20 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
         final int tileIndexY,
         final boolean failOnError,
         final MetricRegistry registry,
-        final Processor.ExecutionContext context,
-        final TileInformation tiledLayer) {
+        final Processor.ExecutionContext context) {
       super(tileIndexX, tileIndexY);
       this.tileRequest = tileRequest;
       this.errorImage = errorImage;
       this.failOnError = failOnError;
       this.registry = registry;
       this.context = context;
+      this.tiledLayer = null;
+    }
+
+    public void setTiledLayer(final TileInformation tiledLayer) {
       this.tiledLayer = tiledLayer;
     }
-
-    /**
-     * Constructor.
-     *
-     * @param tileRequest tile request
-     * @param errorImage error image
-     * @param tileIndexX tile index x
-     * @param tileIndexY tile index y
-     * @param failOnError fail on error
-     * @param registry registry
-     * @param context the job ID
-     */
-    public SingleTileLoaderTask(
-        final ClientHttpRequest tileRequest,
-        final BufferedImage errorImage,
-        final int tileIndexX,
-        final int tileIndexY,
-        final boolean failOnError,
-        final MetricRegistry registry,
-        final Processor.ExecutionContext context) {
-      this(tileRequest, errorImage, tileIndexX, tileIndexY, failOnError, registry, context, null);
-    }
-
+    
     @Override
     protected Tile compute() {
       return this.context.mdcContext(

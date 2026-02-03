@@ -12,14 +12,17 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.RecursiveTask;
+import java.util.function.Supplier;
 import javax.annotation.Nonnull;
 import javax.imageio.ImageIO;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.impl.io.EmptyInputStream;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.coverage.CoverageFactoryFinder;
 import org.geotools.coverage.grid.GridCoverage2D;
 import org.geotools.coverage.grid.GridCoverageFactory;
 import org.geotools.geometry.GeneralBounds;
+import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.mapfish.print.PrintException;
 import org.mapfish.print.StatsUtils;
 import org.mapfish.print.config.Configuration;
@@ -35,6 +38,8 @@ import org.springframework.http.client.ClientHttpRequest;
 import org.springframework.http.client.ClientHttpResponse;
 import org.gvsig.mvtrenderer.lib.impl.MVTTile;
 import org.gvsig.mvtrenderer.lib.impl.MVTStyles;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Envelope;
 
 /** The CoverageTask class. */
 public final class CoverageTask implements Callable<GridCoverage2D> {
@@ -47,7 +52,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
   private final MetricRegistry registry;
   private final Processor.ExecutionContext context;
   private final BufferedImage errorImage;
-
+  
   /**
    * Constructor.
    *
@@ -91,8 +96,31 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
               this.tilePreparationInfo.getImageWidth(), this.tilePreparationInfo.getImageHeight());
       Graphics2D graphics = coverageImage.createGraphics();
       try {
+        
+      final double resolution = this.tiledLayer.getResolution();
+      
+        Dimension tileSizeOnScreen = this.tiledLayer.getTileSize();
+        Coordinate tileSizeInWorld =new Coordinate(tileSizeOnScreen.width * resolution, tileSizeOnScreen.height * resolution);        
+        
         for (SingleTilePreparationInfo tileInfo : this.tilePreparationInfo.getSingleTiles()) {
-          final Tile tile = getTile(tileInfo);
+          
+          double geoX = this.tilePreparationInfo.getGridCoverageOrigin().x + (tileInfo.getTileIndexX()*tileSizeInWorld.x);
+          double geoY = this.tilePreparationInfo.getGridCoverageOrigin().y + (tileInfo.getTileIndexY()*tileSizeInWorld.y);
+          Envelope tileBounds = new Envelope(
+                  geoX, 
+                  geoX + tileSizeInWorld.x, 
+                  geoY, 
+                  geoY + tileSizeInWorld.y
+          );          
+          MVTTileInfo mvtTileInfo = new MVTTileInfo(
+                tileBounds,
+                tileSizeOnScreen, 
+                this.tiledLayer.getVectorStyles(), 
+                () -> { return tiledLayer.getMissingTileImage();},
+                this.tilePreparationInfo.getMapProjection(),
+                this.tiledLayer.getCRS()
+          );
+          final Tile tile = getTile(tileInfo, mvtTileInfo);
           if (tile.getImage() != null) {
             // crop the image here
             BufferedImage noBufferTileImage;
@@ -141,7 +169,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     }
   }
 
-  private Tile getTile(final SingleTilePreparationInfo tileInfo) {
+  private Tile getTile(final SingleTilePreparationInfo tileInfo, MVTTileInfo mvtTileInfo) {
     final TileTask task;
     if (tileInfo.getTileRequest() != null) {
       task =
@@ -154,7 +182,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
               this.registry,
               this.context
           );
-      ((SingleTileLoaderTask)task).setTiledLayer(tiledLayer);
+      ((SingleTileLoaderTask)task).setMVTTileInfo(mvtTileInfo);
     } else {
       task =
           new PlaceHolderImageTask(
@@ -165,6 +193,50 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     return task.call();
   }
 
+  private static class MVTTileInfo {
+    private final Envelope tileEnvelope;
+    private final Dimension tileSizeOnScreen;
+    private final MVTStyles vectorStyles;
+    private final Supplier<BufferedImage> missingImage;
+    private final CoordinateReferenceSystem mapCRS;
+    private final CoordinateReferenceSystem tileCRS;
+    
+    public MVTTileInfo(
+            Envelope tileEnvelope, 
+            Dimension tileSizeOnScreen, 
+            MVTStyles vectorStyles, 
+            Supplier<BufferedImage> missingImage,
+            CoordinateReferenceSystem mapCRS,
+            CoordinateReferenceSystem tileCRS
+      ) {
+      this.tileEnvelope = tileEnvelope;
+      this.tileSizeOnScreen = tileSizeOnScreen;
+      this.vectorStyles = vectorStyles;      
+      this.missingImage = missingImage;
+      this.mapCRS = mapCRS;
+      this.tileCRS = tileCRS;
+    }
+
+    private BufferedImage getMissingTileImage() {
+      if( missingImage == null ) {
+        return null;
+      }
+      return this.missingImage.get();
+    }
+
+    private Envelope getTileEnvelope() {
+      return this.tileEnvelope;
+    }
+
+    private Dimension getTileSizeOnScreen() {
+      return this.tileSizeOnScreen;
+    }
+
+    private MVTStyles getVectorStyles() {
+      return this.vectorStyles;
+    }
+  }
+  
   /** Tile Task. */
   public abstract static class TileTask extends RecursiveTask<Tile> implements Callable<Tile> {
     private final int tileIndexX;
@@ -203,8 +275,8 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     private final MetricRegistry registry;
     private final Processor.ExecutionContext context;
     private final BufferedImage errorImage;
-    private TileInformation tiledLayer;
-    
+//    private TileInformation tiledLayer;
+    private MVTTileInfo mvtTileInfo;
 
     /**
      * Constructor.
@@ -231,11 +303,10 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
       this.failOnError = failOnError;
       this.registry = registry;
       this.context = context;
-      this.tiledLayer = null;
     }
 
-    public void setTiledLayer(final TileInformation tiledLayer) {
-      this.tiledLayer = tiledLayer;
+    public void setMVTTileInfo(final MVTTileInfo mvtTileInfo) {
+      this.mvtTileInfo = mvtTileInfo;
     }
     
     @Override
@@ -310,31 +381,30 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     private BufferedImage renderVectorTile(final ClientHttpResponse response) throws IOException {
       if(response.getBody() == null || response.getBody() instanceof EmptyInputStream) {
         LOGGER.info("response.body is empty");
-        return this.tiledLayer.getMissingTileImage();
+        return this.mvtTileInfo.getMissingTileImage();
       }
       if(response.getBody().available() < 1) {
         LOGGER.info("response.body is empty. available = "+response.getBody().available());
-        return this.tiledLayer.getMissingTileImage();
+        return this.mvtTileInfo.getMissingTileImage();
       }
-      MVTTile tile = new MVTTile();
-      tile.setForcedExtent(this.tiledLayer.getVectorTileSize());
+      MVTTile tile = new MVTTile(this.mvtTileInfo.tileCRS, this.mvtTileInfo.mapCRS);
       LOGGER.info("loading mvtTile");
-      tile.download(response.getBody());
+      tile.download(response.getBody(), mvtTileInfo.getTileEnvelope());
       LOGGER.info("loaded mvtTile");
-      Dimension tileSize = this.tiledLayer.getTileSize();
-      MVTStyles styles = this.tiledLayer.getVectorStyles();
+      Dimension tileSizeOnScreen = this.mvtTileInfo.getTileSizeOnScreen();
+      MVTStyles styles = this.mvtTileInfo.getVectorStyles();
       if(styles == null) {
         LOGGER.info("vectorStyles is NULL");
-        return this.tiledLayer.getMissingTileImage();
+        return this.mvtTileInfo.getMissingTileImage();
       }
-      LOGGER.info("vectorStyles w = "+tileSize.width+" h = "+tileSize.height);
-      BufferedImage image = tile.render(styles, tileSize.width, tileSize.height);
+      LOGGER.info("vectorStyles w = "+tileSizeOnScreen.width+" h = "+tileSizeOnScreen.height);
+      BufferedImage image = tile.render(styles, tileSizeOnScreen.width, tileSizeOnScreen.height);
       LOGGER.info("Image created");
       return image;
     }
     
     private boolean isVectorTile(final ClientHttpResponse response) {
-      if(this.tiledLayer == null) {
+      if(this.mvtTileInfo == null) {
         LOGGER.info("tiledLayer is NULL");
         return false;
       }

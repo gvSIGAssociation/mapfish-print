@@ -7,6 +7,7 @@ import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.locationtech.jts.geom.Coordinate;
 import org.mapfish.print.attribute.map.MapBounds;
@@ -163,6 +164,10 @@ public abstract class TileInformation<T extends AbstractTiledLayerParams> {
     return params;
   }
 
+  public CoordinateReferenceSystem getCRS() {
+    return params.getCRS();
+  }
+  
   public MVTStyles getVectorStyles() {
     return params.getVectorStyles();
   }

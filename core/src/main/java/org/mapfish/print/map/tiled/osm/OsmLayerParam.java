@@ -9,6 +9,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import org.apache.commons.lang3.StringUtils;
+import org.geotools.api.referencing.FactoryException;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
+import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.Envelope;
 import org.locationtech.jts.util.Assert;
 import org.mapfish.print.map.tiled.AbstractTiledLayerParams;
@@ -207,4 +210,15 @@ public final class OsmLayerParam extends AbstractTiledLayerParams {
       return false;
     }
   }
+
+  @Override
+  public CoordinateReferenceSystem getCRS() {
+    try {
+      CoordinateReferenceSystem crs = CRS.decode("EPSG:3857");
+      return crs;
+    } catch (FactoryException ex) {
+      return null;
+    }
+  }
+  
 }

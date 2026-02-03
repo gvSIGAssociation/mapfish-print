@@ -4,6 +4,7 @@ import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import org.apache.commons.lang3.StringUtils;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.mapfish.print.map.AbstractLayerParams;
 import org.mapfish.print.parser.HasDefaultValue;
 import org.gvsig.mvtrenderer.lib.impl.MVTStyles;
@@ -65,6 +66,10 @@ public abstract class AbstractTiledLayerParams extends AbstractLayerParams {
    * append all mergeable and custom params to the base url.
    */
   public abstract String createCommonUrl() throws URISyntaxException;
+
+  public CoordinateReferenceSystem getCRS() {
+    return null;
+  }
   
   public URL getVectorStylesURL() throws MalformedURLException {
     if(StringUtils.isBlank(this.vectorStyles)) {

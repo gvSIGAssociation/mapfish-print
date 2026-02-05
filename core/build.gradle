@@ -14,6 +14,7 @@ repositories {
     }
     maven { url 'https://jaspersoft.jfrog.io/jaspersoft/third-party-ce-artifacts' }
     maven { url 'https://repo.osgeo.org/repository/release/' }
+    maven { url 'https://devel.gvsig.org/m2repo/j2se' }
     maven { 
       // Temporal durante el desarrollo mientras no tengamos desplegada una revision de org.gvsig.mvtrenderer
       url 'http://host.docker.internal:8000'
@@ -130,7 +131,7 @@ configurations {
 
 dependencies {
         implementation(
-            'org.gvsig:org.gvsig.mvtrenderer.main:1.0.2-SNAPSHOT',
+            'org.gvsig:org.gvsig.mvtrenderer.main:1.0.4',
         )   
         implementation(
             'org.springframework:spring-context:5.3.39',

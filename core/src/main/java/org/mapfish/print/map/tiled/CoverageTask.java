@@ -387,16 +387,16 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
         LOGGER.info("response.body is empty. available = "+response.getBody().available());
         return this.mvtTileInfo.getMissingTileImage();
       }
-      MVTTile tile = new MVTTile(this.mvtTileInfo.tileCRS, this.mvtTileInfo.mapCRS);
-      LOGGER.info("loading mvtTile");
-      tile.download(response.getBody(), mvtTileInfo.getTileEnvelope());
-      LOGGER.info("loaded mvtTile");
-      Dimension tileSizeOnScreen = this.mvtTileInfo.getTileSizeOnScreen();
       MVTStyles styles = this.mvtTileInfo.getVectorStyles();
       if(styles == null) {
         LOGGER.info("vectorStyles is NULL");
         return this.mvtTileInfo.getMissingTileImage();
       }
+      MVTTile tile = new MVTTile(this.mvtTileInfo.tileCRS, this.mvtTileInfo.mapCRS);
+      LOGGER.info("loading mvtTile");
+      tile.download(response.getBody(), mvtTileInfo.getTileEnvelope(), styles.extractFieldsFromStyles());
+      LOGGER.info("loaded mvtTile");
+      Dimension tileSizeOnScreen = this.mvtTileInfo.getTileSizeOnScreen();
       LOGGER.info("vectorStyles w = "+tileSizeOnScreen.width+" h = "+tileSizeOnScreen.height);
       BufferedImage image = tile.render(styles, tileSizeOnScreen.width, tileSizeOnScreen.height);
       LOGGER.info("Image created");

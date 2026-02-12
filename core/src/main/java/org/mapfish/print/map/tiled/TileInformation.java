@@ -1,10 +1,12 @@
 package org.mapfish.print.map.tiled;
 
+import com.google.common.collect.Multimap;
 import java.awt.Dimension;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
+import java.util.Map;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
@@ -168,12 +170,8 @@ public abstract class TileInformation<T extends AbstractTiledLayerParams> {
     return params.getCRS();
   }
   
-  public MVTStyles getVectorStyles() {
-    return params.getVectorStyles();
-  }
-
-  public Integer getVectorTileSize() {
-    return params.vectorTileSize;
+  public Map<String, String> getVectorTileParams() {
+    return this.params.getVectorTileParams();
   }
 
   /**

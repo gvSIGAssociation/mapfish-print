@@ -7,22 +7,24 @@ import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
+import java.net.MalformedURLException;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.Objects;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.RecursiveTask;
 import java.util.function.Supplier;
 import javax.annotation.Nonnull;
 import javax.imageio.ImageIO;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.impl.io.EmptyInputStream;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.coverage.CoverageFactoryFinder;
 import org.geotools.coverage.grid.GridCoverage2D;
 import org.geotools.coverage.grid.GridCoverageFactory;
 import org.geotools.geometry.GeneralBounds;
-import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.mapfish.print.PrintException;
 import org.mapfish.print.StatsUtils;
 import org.mapfish.print.config.Configuration;
@@ -87,7 +89,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
       graphics.dispose();
     }
   }
-
+  
   /** Call the Coverage Task. */
   public GridCoverage2D call() {
     try {
@@ -99,27 +101,23 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
         
       final double resolution = this.tiledLayer.getResolution();
       
-        Dimension tileSizeOnScreen = this.tiledLayer.getTileSize();
-        Coordinate tileSizeInWorld =new Coordinate(tileSizeOnScreen.width * resolution, tileSizeOnScreen.height * resolution);        
+        MVTTilesInfo vectorTilesInfo = new MVTTilesInfo(
+                this.tiledLayer.getTileSize(),
+                resolution,
+                () -> { return tiledLayer.getMissingTileImage();},
+                this.tilePreparationInfo.getMapProjection(),
+                this.tiledLayer.getCRS(),
+                this.tiledLayer.getVectorTileParams()
+        );
         
         for (SingleTilePreparationInfo tileInfo : this.tilePreparationInfo.getSingleTiles()) {
           
-          double geoX = this.tilePreparationInfo.getGridCoverageOrigin().x + (tileInfo.getTileIndexX()*tileSizeInWorld.x);
-          double geoY = this.tilePreparationInfo.getGridCoverageOrigin().y + (tileInfo.getTileIndexY()*tileSizeInWorld.y);
-          Envelope tileBounds = new Envelope(
-                  geoX, 
-                  geoX + tileSizeInWorld.x, 
-                  geoY, 
-                  geoY + tileSizeInWorld.y
-          );          
-          MVTTileInfo mvtTileInfo = new MVTTileInfo(
-                tileBounds,
-                tileSizeOnScreen, 
-                this.tiledLayer.getVectorStyles(), 
-                () -> { return tiledLayer.getMissingTileImage();},
-                this.tilePreparationInfo.getMapProjection(),
-                this.tiledLayer.getCRS()
-          );
+          MVTTileInfo mvtTileInfo = vectorTilesInfo.createTileInfo(
+                  this.tilePreparationInfo.getGridCoverageOrigin(), 
+                  tileInfo.getTileIndexX(), 
+                  tileInfo.getTileIndexY()
+          ); 
+          
           final Tile tile = getTile(tileInfo, mvtTileInfo);
           if (tile.getImage() != null) {
             // crop the image here
@@ -192,7 +190,86 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     }
     return task.call();
   }
+  
+  private static class MVTTilesInfo {
 
+    Dimension tileSizeOnScreen;
+    Coordinate tileSizeInWorld;
+    Supplier<BufferedImage> missingTileImage;
+    CoordinateReferenceSystem mapCRS;
+    CoordinateReferenceSystem tileCRS;
+    Map<String, String> params;
+    private MVTStyles styles;
+    private final double resolution;
+
+    public MVTTilesInfo(
+            Dimension tileSizeOnScreen,
+            double resolution,
+            Supplier<BufferedImage> missingTileImage,
+            CoordinateReferenceSystem mapCRS,
+            CoordinateReferenceSystem tileCRS,
+            Map<String, String> params
+    ) {
+      this.tileSizeOnScreen = tileSizeOnScreen;
+      this.resolution = resolution;
+      this.tileSizeInWorld =new Coordinate(tileSizeOnScreen.width * resolution, tileSizeOnScreen.height * resolution);        
+      this.missingTileImage = missingTileImage;
+      this.mapCRS = mapCRS;
+      this.tileCRS = tileCRS;
+      this.params = params;
+    }
+
+    public Coordinate getTileSizeInWorld() {
+      return tileSizeInWorld;
+    }
+    
+    public URL getVectorStylesURL() throws MalformedURLException {
+      String vs = this.params.get("vectorStyles");
+      if(StringUtils.isBlank(vs)) {
+        return null;
+      } 
+      return new URL(vs);
+    }
+
+    @SuppressWarnings("UseSpecificCatch")
+    public MVTStyles getVectorStyles() {
+      if(this.styles != null) {
+        return this.styles;
+      }
+      try {
+        URL url = this.getVectorStylesURL();
+        MVTStyles theStyles = new MVTStyles();
+        theStyles.download(url);
+        LOGGER.info("Fonts used by '"+url.toString()+"':"+StringUtils.join(theStyles.getUsedFontNames(),","));
+        this.styles = theStyles;
+        return this.styles;
+      } catch (Exception e) {
+        return null;
+      }
+    }
+
+    public MVTTileInfo createTileInfo(Coordinate gridOrigin, int tileIndexX, int tileIndexY) {
+      double geoX = gridOrigin.x + (tileIndexX * this.tileSizeInWorld.x);
+      double geoY = gridOrigin.y + (tileIndexY * this.tileSizeInWorld.y);
+      Envelope tileBounds = new Envelope(
+              geoX,
+              geoX + this.tileSizeInWorld.x,
+              geoY,
+              geoY + this.tileSizeInWorld.y
+      );
+
+      MVTTileInfo tileInfo = new MVTTileInfo(
+              tileBounds,
+              tileSizeOnScreen,
+              getVectorStyles(),
+              missingTileImage,
+              mapCRS, tileCRS,
+              params
+      );
+      return tileInfo;
+    }
+  }
+ 
   private static class MVTTileInfo {
     private final Envelope tileEnvelope;
     private final Dimension tileSizeOnScreen;
@@ -200,6 +277,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     private final Supplier<BufferedImage> missingImage;
     private final CoordinateReferenceSystem mapCRS;
     private final CoordinateReferenceSystem tileCRS;
+    private final Map<String, String> params;
     
     public MVTTileInfo(
             Envelope tileEnvelope, 
@@ -207,7 +285,8 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
             MVTStyles vectorStyles, 
             Supplier<BufferedImage> missingImage,
             CoordinateReferenceSystem mapCRS,
-            CoordinateReferenceSystem tileCRS
+            CoordinateReferenceSystem tileCRS,
+            Map<String, String> params
       ) {
       this.tileEnvelope = tileEnvelope;
       this.tileSizeOnScreen = tileSizeOnScreen;
@@ -215,6 +294,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
       this.missingImage = missingImage;
       this.mapCRS = mapCRS;
       this.tileCRS = tileCRS;
+      this.params = params;
     }
 
     private BufferedImage getMissingTileImage() {
@@ -235,6 +315,11 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     private MVTStyles getVectorStyles() {
       return this.vectorStyles;
     }
+
+    public Map<String, String> getParams() {
+      return this.params;
+    }
+    
   }
   
   /** Tile Task. */
@@ -275,7 +360,6 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
     private final MetricRegistry registry;
     private final Processor.ExecutionContext context;
     private final BufferedImage errorImage;
-//    private TileInformation tiledLayer;
     private MVTTileInfo mvtTileInfo;
 
     /**
@@ -305,7 +389,7 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
       this.context = context;
     }
 
-    public void setMVTTileInfo(final MVTTileInfo mvtTileInfo) {
+    private void setMVTTileInfo(final MVTTileInfo mvtTileInfo) {
       this.mvtTileInfo = mvtTileInfo;
     }
     
@@ -357,7 +441,6 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
 
     private BufferedImage getImageFromResponse(
         final ClientHttpResponse response, final String baseMetricName) throws IOException {
-      LOGGER.info("Entro en getImageFromResponse");
       BufferedImage image = isVectorTile(response) ? renderVectorTile(response) : ImageIO.read(response.getBody());
       if (image == null) {
         if (this.failOnError) {
@@ -393,30 +476,24 @@ public final class CoverageTask implements Callable<GridCoverage2D> {
         return this.mvtTileInfo.getMissingTileImage();
       }
       MVTTile tile = new MVTTile(this.mvtTileInfo.tileCRS, this.mvtTileInfo.mapCRS);
-      LOGGER.info("loading mvtTile");
+      tile.setParams(this.mvtTileInfo.getParams());
       tile.download(response.getBody(), mvtTileInfo.getTileEnvelope(), styles.extractFieldsFromStyles());
-      LOGGER.info("loaded mvtTile");
       Dimension tileSizeOnScreen = this.mvtTileInfo.getTileSizeOnScreen();
-      LOGGER.info("vectorStyles w = "+tileSizeOnScreen.width+" h = "+tileSizeOnScreen.height);
       BufferedImage image = tile.render(styles, tileSizeOnScreen.width, tileSizeOnScreen.height);
-      LOGGER.info("Image created");
       return image;
     }
     
     private boolean isVectorTile(final ClientHttpResponse response) {
       if(this.mvtTileInfo == null) {
-        LOGGER.info("tiledLayer is NULL");
         return false;
       }
       try {
         MediaType ct = response.getHeaders().getContentType();
-        LOGGER.info("contentType "+Objects.toString(ct));
         boolean r = ct != null && ct.toString().equalsIgnoreCase("application/x-protobuf");
         if(!r) {
-          String s = this.tileRequest.getURI().toString().toLowerCase();
+          String s = this.tileRequest.getURI().getPath().toLowerCase();
           r = s.endsWith(".pbf");
         }
-        LOGGER.info("return "+r);
         return r;
       } catch (Exception e) {
         LOGGER.info("error ", e);

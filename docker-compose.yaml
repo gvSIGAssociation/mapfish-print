@@ -12,11 +12,15 @@ services:
       - ./examples/src/test/resources/examples:/usr/local/tomcat/webapps/ROOT/print-apps:ro
     ports:
       - 8080:8080
+      - 5005:5005
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      
     environment:
       PRINT_YAML_MAX_ALIASES: '200'
       LOG_LEVEL: DEBUG
       JASPER_LOG_LEVEL: DEBUG
-      JAVA_OPTS: '-Dmapfish.image.plugins=true'
+      JAVA_OPTS: '-Dmapfish.image.plugins=true -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005'
 
   tests:
     image: mapfish_print_builder
@@ -27,6 +31,8 @@ services:
       - ./examples/src/test/resources/examples:/src/examples/src/test/resources/examples
       - ./examples/build/reports:/src/examples/build/reports
       - ./examples/build/resources:/src/examples/build/resources
+    extra_hosts:
+      - "host.docker.internal:host-gateway"      
     environment:
       PRINT_YAML_MAX_ALIASES: '200'
       GRADLE_USER_HOME: /home/gradle/.gradle

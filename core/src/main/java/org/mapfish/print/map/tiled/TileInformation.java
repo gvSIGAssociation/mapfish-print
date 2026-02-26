@@ -1,17 +1,21 @@
 package org.mapfish.print.map.tiled;
 
+import com.google.common.collect.Multimap;
 import java.awt.Dimension;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.io.UnsupportedEncodingException;
 import java.net.URISyntaxException;
+import java.util.Map;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.locationtech.jts.geom.Coordinate;
 import org.mapfish.print.attribute.map.MapBounds;
 import org.mapfish.print.http.MfClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpRequest;
+import org.gvsig.mvtrenderer.lib.impl.MVTStyles;
 
 /**
  * Encapsulates the information needed to create tile requests for a particular map bounds and
@@ -160,6 +164,14 @@ public abstract class TileInformation<T extends AbstractTiledLayerParams> {
 
   protected final T getParams() {
     return params;
+  }
+
+  public CoordinateReferenceSystem getCRS() {
+    return params.getCRS();
+  }
+  
+  public Map<String, String> getVectorTileParams() {
+    return this.params.getVectorTileParams();
   }
 
   /**

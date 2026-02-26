@@ -16,7 +16,7 @@ build-builder:
 	# Required and not necessarily exists
 	touch CI.asc
 
-	docker build $(GIT_HEAD_ARG) --target=builder --tag=mapfish_print_builder .
+	docker build $(GIT_HEAD_ARG) --add-host=host.docker.internal:host-gateway --target=builder --tag=mapfish_print_builder .
 
 .PHONY: checks
 checks: build-builder

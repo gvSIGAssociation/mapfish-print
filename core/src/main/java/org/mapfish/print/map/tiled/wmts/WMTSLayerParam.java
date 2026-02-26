@@ -4,8 +4,12 @@ import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.logging.Level;
 import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringUtils;
+import org.geotools.api.referencing.FactoryException;
+import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
+import org.geotools.referencing.CRS;
 import org.locationtech.jts.util.Assert;
 import org.mapfish.print.URIUtils;
 import org.mapfish.print.map.tiled.AbstractWMXLayerParams;
@@ -201,4 +205,18 @@ public final class WMTSLayerParam extends AbstractWMXLayerParams {
     }
     return URIUtils.setQueryParams(commonURI, queryParams);
   }
+
+  @Override
+  public CoordinateReferenceSystem getCRS() {
+    if( this.matrixSet==null || this.matrixSet.isBlank() ) {
+      return null;
+    }
+    try {
+      CoordinateReferenceSystem crs = CRS.decode(this.matrixSet);
+      return crs;
+    } catch (FactoryException ex) {
+      return null;
+    }
+  }
+  
 }
